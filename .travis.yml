@@ -1,0 +1,44 @@
+language: bash
+
+services:
+  - docker
+
+env:
+  global:
+    - RF_CONTAINER_ENGINE=docker
+    - RF_APP_HOST=us01.rapidfort.com  # Set via UI or override here
+
+before_install:
+  - sudo apt update
+  - sudo apt install -y curl jq unzip
+  - echo "Installing RapidFort CLI from $RF_APP_HOST"
+  - curl -sSfL "https://${RF_APP_HOST}/cli" -o install_rf.sh
+  - chmod +x install_rf.sh
+  - sudo bash install_rf.sh
+  - echo "RapidFort CLI installed"
+
+  # Export secrets (set in Travis CI UI)
+  - export RF_ACCESS_ID=${RF_ACCESS_ID}
+  - export RF_SECRET_ACCESS_KEY=${RF_SECRET_ACCESS_KEY}
+  - export RF_ROOT_URL=${RF_ROOT_URL}
+  - rflogin
+
+script:
+  - echo "Pulling redis:latest"
+  - docker pull redis:latest
+  - echo "Scanning with RapidFort"
+  - mkdir -p rfscan-reports
+  - rfscan redis:latest --reports-folder rfscan-reports
+  - |
+    if [ -f rfscan-reports/vulnerability_report_gitlab.json ]; then
+      cp rfscan-reports/vulnerability_report_gitlab.json gl-container-scanning-report.json
+    else
+      echo "[ERROR] vulnerability_report_gitlab.json not found!"
+      ls -la rfscan-reports
+      exit 1
+    fi
+
+after_success:
+  - echo "Scan completed. You can now upload the report if needed."
+
+
