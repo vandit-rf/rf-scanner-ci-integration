@@ -1,0 +1,72 @@
+version: 2.1
+
+executors:
+  docker-executor:
+    docker:
+      - image: cimg/base:stable  # Ubuntu-based CircleCI image with bash
+        auth:
+          username: my-dockerhub-username  # optional
+          password: $DOCKERHUB_PASSWORD    # optional
+
+jobs:
+  scan-container:
+    executor: docker-executor
+    environment:
+      RF_CONTAINER_ENGINE: docker
+      RF_APP_HOST: us01.rapidfort.com
+    steps:
+      - checkout
+
+      - run:
+          name: Install dependencies
+          command: |
+            sudo apt update
+            sudo apt install -y curl jq unzip docker.io
+
+      - run:
+          name: Install RapidFort CLI
+          command: |
+            curl -sSfL "https://${RF_APP_HOST}/cli" -o install_rf.sh
+            chmod +x install_rf.sh
+            sudo bash install_rf.sh
+            echo "RapidFort CLI installed"
+
+      - run:
+          name: Authenticate with RapidFort
+          command: |
+            export RF_ACCESS_ID=$RF_ACCESS_ID
+            export RF_SECRET_ACCESS_KEY=$RF_SECRET_ACCESS_KEY
+            export RF_ROOT_URL=$RF_ROOT_URL
+            rflogin
+
+      - run:
+          name: Pull Docker Image
+          command: docker pull redis:latest
+
+      - run:
+          name: Scan Image
+          command: |
+            mkdir -p rfscan-reports
+            rfscan redis:latest --reports-folder rfscan-reports
+
+      - run:
+          name: Validate Scan Output
+          command: |
+            if [ -f rfscan-reports/vulnerability_report_gitlab.json ]; then
+              cp rfscan-reports/vulnerability_report_gitlab.json gl-container-scanning-report.json
+            else
+              echo "[ERROR] vulnerability_report_gitlab.json not found!"
+              ls -la rfscan-reports
+              exit 1
+            fi
+
+      - store_artifacts:
+          path: gl-container-scanning-report.json
+          destination: rapidfort-report
+
+workflows:
+  version: 2
+  scan-workflow:
+    jobs:
+      - scan-container
+
