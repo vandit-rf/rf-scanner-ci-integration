@@ -1,0 +1,60 @@
+name: Container Scan
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  rfscan:
+    runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24.0.7-dind
+        privileged: true
+        options: --dns 8.8.8.8
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker.io
+          sudo systemctl start docker
+          docker --version
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y curl jq unzip
+
+      - name: Install RapidFort CLI
+        run: |
+          export RF_APP_HOST=${{ secrets.RF_APP_HOST }}
+          curl -sSfL "https://${RF_APP_HOST}/cli" -o install_rf.sh
+          chmod +x install_rf.sh
+          bash install_rf.sh
+          echo "RapidFort CLI installed"
+
+      - name: Authenticate to RapidFort
+        run: |
+          export RF_ACCESS_ID=${{ secrets.RF_ACCESS_ID }}
+          export RF_SECRET_ACCESS_KEY=${{ secrets.RF_SECRET_ACCESS_KEY }}
+          export RF_ROOT_URL=${{ secrets.RF_ROOT_URL }}
+          rflogin
+
+      - name: Pull docker image
+        run: docker pull redis:latest
+
+      - name: Run rfscan
+        run: |
+          mkdir -p rfscan-reports
+          rfscan redis:latest --reports-folder rfscan-reports
+
+      - name: Upload scan report
+        uses: actions/upload-artifact@v3
+        with:
+          name: rapidfort-scan-report
+          path: rfscan-reports/
+
